@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Hash, Plus, ChevronDown, ChevronRight, MessageSquare, Search, Settings, Bell, Star, LogOut } from 'lucide-react';
+import { Hash, Plus, ChevronDown, ChevronRight, MessageSquare, Search, Settings, Bell, Star, LogOut, Edit } from 'lucide-react';
 import { useWorkspaceStore } from '@/store/useWorkspaceStore';
 import { useChannels } from '@/hooks/useChannels';
 import { useAuth } from '@/hooks/useAuth';
@@ -11,16 +11,89 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AddChannelDialog } from './AddChannelDialog';
 import { AddDMDialog } from './AddDMDialog';
+import { NewMessageDialog } from './NewMessageDialog';
+import { ChannelContextMenu } from './ChannelContextMenu';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+
+interface SortableChannelItemProps {
+  channel: any;
+  isActive: boolean;
+  onClick: () => void;
+}
+
+const SortableChannelItem = ({ channel, isActive, onClick }: SortableChannelItemProps) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+  } = useSortable({ id: channel.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <button
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      onClick={onClick}
+      className={cn(
+        'w-full flex items-center gap-2 px-3 py-1 rounded text-[15px] group transition-all',
+        isActive
+          ? 'bg-[hsl(var(--slack-cyan))] text-foreground font-bold'
+          : 'text-[hsl(var(--slack-text-secondary))] hover:bg-[hsl(var(--slack-purple-hover))]'
+      )}
+    >
+      {channel.type === 'channel' ? (
+        <Hash className="h-[15px] w-[15px]" />
+      ) : (
+        <div className="w-5 h-5 rounded bg-[hsl(var(--slack-purple-active))] flex items-center justify-center text-xs">
+          👤
+        </div>
+      )}
+      <span className="flex-1 text-left truncate">{channel.name}</span>
+    </button>
+  );
+};
 
 export const WorkspaceSidebar = () => {
-  const { activeChannel, setActiveChannel, sidebarCollapsed, toggleSidebar } = useWorkspaceStore();
+  const { activeChannel, setActiveChannel, sidebarCollapsed, toggleSidebar, channelOrder, reorderChannels } = useWorkspaceStore();
   const { channels, loading: channelsLoading } = useChannels();
   const { user, signOut } = useAuth();
   const { profile } = useProfile(user?.id);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [showAddChannel, setShowAddChannel] = useState(false);
   const [showAddDM, setShowAddDM] = useState(false);
+  const [showNewMessage, setShowNewMessage] = useState(false);
   const navigate = useNavigate();
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   // Set first channel as active on mount
   useEffect(() => {
@@ -34,6 +107,19 @@ export const WorkspaceSidebar = () => {
       ...prev,
       [section]: !prev[section]
     }));
+  };
+
+  const handleDragEnd = (event: DragEndEvent, section: string) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const sectionChannels = channelsBySection[section];
+      const oldIndex = sectionChannels.findIndex((c) => c.id === active.id);
+      const newIndex = sectionChannels.findIndex((c) => c.id === over.id);
+
+      const newOrder = arrayMove(sectionChannels, oldIndex, newIndex);
+      reorderChannels(section, newOrder.map((c) => c.id));
+    }
   };
 
   if (sidebarCollapsed) {
@@ -67,6 +153,19 @@ export const WorkspaceSidebar = () => {
     return acc;
   }, {} as Record<string, typeof channels>);
 
+  // Apply custom ordering
+  Object.keys(channelsBySection).forEach((section) => {
+    if (channelOrder[section]) {
+      channelsBySection[section] = channelsBySection[section].sort((a, b) => {
+        const aIndex = channelOrder[section].indexOf(a.id);
+        const bIndex = channelOrder[section].indexOf(b.id);
+        if (aIndex === -1) return 1;
+        if (bIndex === -1) return -1;
+        return aIndex - bIndex;
+      });
+    }
+  });
+
   return (
     <motion.aside
       initial={{ width: 68 }}
@@ -75,6 +174,25 @@ export const WorkspaceSidebar = () => {
     >
       {/* Workspace Header */}
       <div className="px-3 py-2 border-b border-[hsl(var(--slack-purple-active))]">
+        <div className="flex items-center gap-2 mb-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 flex-shrink-0 text-foreground hover:bg-[hsl(var(--slack-purple-hover))]"
+            onClick={() => setShowNewMessage(true)}
+            title="New message"
+          >
+            <Edit className="h-5 w-5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 flex-shrink-0 text-foreground hover:bg-[hsl(var(--slack-purple-hover))]"
+            title="Settings"
+          >
+            <Settings className="h-5 w-5" />
+          </Button>
+        </div>
         <Button
           variant="ghost"
           className="w-full justify-between px-2 h-auto py-2 text-foreground hover:bg-[hsl(var(--slack-purple-hover))] rounded"
@@ -87,7 +205,6 @@ export const WorkspaceSidebar = () => {
           </div>
           <ChevronDown className="h-4 w-4" />
         </Button>
-
       </div>
 
       {/* Navigation */}
@@ -146,66 +263,66 @@ export const WorkspaceSidebar = () => {
           {/* Sections */}
           {Object.entries(channelsBySection).map(([section, sectionChannels]) => (
             <div key={section} className="mb-3">
-              <button 
-                onClick={() => toggleSection(section)}
-                className="w-full flex items-center justify-between px-3 py-1 text-[hsl(var(--slack-text-secondary))] hover:text-foreground text-xs font-bold group"
-              >
-                <div className="flex items-center gap-1">
-                  {collapsedSections[section] ? (
-                    <ChevronRight className="h-3 w-3" />
-                  ) : (
-                    <ChevronDown className="h-3 w-3" />
-                  )}
-                  <span>{section}</span>
-                </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (section === 'Direct messages') {
-                      setShowAddDM(true);
-                    } else {
-                      setShowAddChannel(true);
-                    }
-                  }}
-                  className="opacity-0 group-hover:opacity-100"
+              <ChannelContextMenu>
+                <button 
+                  onClick={() => toggleSection(section)}
+                  className="w-full flex items-center justify-between px-3 py-1 text-[hsl(var(--slack-text-secondary))] hover:text-foreground text-xs font-bold group"
                 >
-                  <Plus className="h-3.5 w-3.5" />
-                </button>
-              </button>
-              {!collapsedSections[section] && (
-                <div className="space-y-0.5 mt-0.5">
-                  {sectionChannels.map((channel) => (
-                    <button
-                      key={channel.id}
-                      onClick={() => {
-                        setActiveChannel(channel.id);
-                        navigate('/');
-                      }}
-                      className={cn(
-                        'w-full flex items-center gap-2 px-3 py-1 rounded text-[15px] group transition-all',
-                        activeChannel === channel.id
-                          ? 'bg-[hsl(var(--slack-cyan))] text-foreground font-bold'
-                          : 'text-[hsl(var(--slack-text-secondary))] hover:bg-[hsl(var(--slack-purple-hover))]'
-                      )}
-                    >
-                      {channel.type === 'channel' ? (
-                        <Hash className="h-[15px] w-[15px]" />
-                      ) : (
-                        <div className="w-5 h-5 rounded bg-[hsl(var(--slack-purple-active))] flex items-center justify-center text-xs">
-                          👤
-                        </div>
-                      )}
-                      <span className="flex-1 text-left truncate">{channel.name}</span>
-                    </button>
-                  ))}
-                  <button 
-                    onClick={() => section === 'Direct messages' ? setShowAddDM(true) : setShowAddChannel(true)}
-                    className="w-full flex items-center gap-2 px-3 py-1 rounded text-[15px] text-[hsl(var(--slack-text-muted))] hover:bg-[hsl(var(--slack-purple-hover))] hover:text-[hsl(var(--slack-text-secondary))]"
+                  <div className="flex items-center gap-1">
+                    {collapsedSections[section] ? (
+                      <ChevronRight className="h-3 w-3" />
+                    ) : (
+                      <ChevronDown className="h-3 w-3" />
+                    )}
+                    <span>{section}</span>
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (section === 'Direct messages') {
+                        setShowAddDM(true);
+                      } else {
+                        setShowAddChannel(true);
+                      }
+                    }}
+                    className="opacity-0 group-hover:opacity-100"
                   >
-                    <Plus className="h-4 w-4" />
-                    <span>Add {section === 'Direct messages' ? 'teammates' : 'channels'}</span>
+                    <Plus className="h-3.5 w-3.5" />
                   </button>
-                </div>
+                </button>
+              </ChannelContextMenu>
+              {!collapsedSections[section] && (
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={(event) => handleDragEnd(event, section)}
+                >
+                  <SortableContext
+                    items={sectionChannels.map((c) => c.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <div className="space-y-0.5 mt-0.5">
+                      {sectionChannels.map((channel) => (
+                        <SortableChannelItem
+                          key={channel.id}
+                          channel={channel}
+                          isActive={activeChannel === channel.id}
+                          onClick={() => {
+                            setActiveChannel(channel.id);
+                            navigate('/');
+                          }}
+                        />
+                      ))}
+                      <button 
+                        onClick={() => section === 'Direct messages' ? setShowAddDM(true) : setShowAddChannel(true)}
+                        className="w-full flex items-center gap-2 px-3 py-1 rounded text-[15px] text-[hsl(var(--slack-text-muted))] hover:bg-[hsl(var(--slack-purple-hover))] hover:text-[hsl(var(--slack-text-secondary))]"
+                      >
+                        <Plus className="h-4 w-4" />
+                        <span>Add {section === 'Direct messages' ? 'teammates' : 'channels'}</span>
+                      </button>
+                    </div>
+                  </SortableContext>
+                </DndContext>
               )}
             </div>
           ))}
@@ -264,6 +381,7 @@ export const WorkspaceSidebar = () => {
       
       <AddChannelDialog open={showAddChannel} onOpenChange={setShowAddChannel} />
       <AddDMDialog open={showAddDM} onOpenChange={setShowAddDM} />
+      <NewMessageDialog open={showNewMessage} onOpenChange={setShowNewMessage} />
     </motion.aside>
   );
 };
