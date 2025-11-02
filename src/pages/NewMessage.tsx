@@ -1,50 +1,87 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Search, X, ArrowLeft } from 'lucide-react';
+import { Search, ArrowLeft } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { WorkspaceSidebar } from '@/components/WorkspaceSidebar';
+
+interface Profile {
+  id: string;
+  username: string;
+  display_name: string | null;
+  avatar_url: string | null;
+}
 
 export default function NewMessage() {
   const [search, setSearch] = useState('');
-  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  const handleCreateChannel = async () => {
-    if (selectedUsers.length === 0) {
-      toast.error('Please select at least one person');
-      return;
-    }
+  useEffect(() => {
+    fetchProfiles();
+  }, []);
 
-    try {
-      const channelName = selectedUsers.join(', ');
-      const { data, error } = await supabase
-        .from('channels')
-        .insert({
-          name: channelName,
-          type: 'dm',
-          section: 'Direct messages',
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      toast.success('Direct message created');
-      navigate('/');
-      setSearch('');
-      setSelectedUsers([]);
-    } catch (error) {
-      console.error('Error creating DM:', error);
-      toast.error('Failed to create direct message');
+  const fetchProfiles = async () => {
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, username, display_name, avatar_url')
+      .neq('id', user?.id || '');
+    
+    if (data) {
+      setProfiles(data);
     }
   };
 
+  const handleCreateDM = async (profileId: string, username: string) => {
+    if (!user) return;
+
+    try {
+      // Check if DM already exists
+      const { data: existingChannels, error: checkError } = await supabase
+        .from('channels')
+        .select('id')
+        .eq('type', 'dm')
+        .contains('dm_users', [user.id, profileId]);
+
+      if (checkError) throw checkError;
+
+      if (existingChannels && existingChannels.length > 0) {
+        // Navigate to existing DM
+        navigate(`/c/${existingChannels[0].id}`);
+        return;
+      }
+
+      const { data, error } = await supabase.from('channels').insert({
+        name: username,
+        type: 'dm',
+        section: 'Direct messages',
+        created_by: user.id,
+        dm_users: [user.id, profileId],
+      }).select().single();
+
+      if (error) throw error;
+
+      toast.success(`Started conversation with ${username}`);
+      navigate(`/c/${data.id}`);
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to create direct message');
+    }
+  };
+
+  const filteredProfiles = profiles.filter(p => 
+    p.username.toLowerCase().includes(search.toLowerCase()) ||
+    p.display_name?.toLowerCase().includes(search.toLowerCase())
+  );
+
   return (
-    <div className="flex flex-col flex-1">
+    <div className="flex h-screen overflow-hidden">
+      <WorkspaceSidebar />
+      <div className="flex flex-col flex-1">
         {/* Header */}
         <div className="border-b border-border px-6 py-4">
           <div className="flex items-center gap-4 mb-4">
@@ -58,15 +95,12 @@ export default function NewMessage() {
             </Button>
             <h1 className="text-xl font-bold">New message</h1>
           </div>
-          <div className="text-sm text-muted-foreground mb-4">
-            <span className="font-semibold">To:</span>
-          </div>
           <div className="relative">
             <Input
-              placeholder="#a-channel, @somebody or somebody@example.com"
+              placeholder="Search people..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
+              className="pl-9 h-11"
               autoFocus
             />
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -74,51 +108,43 @@ export default function NewMessage() {
         </div>
 
         {/* Content */}
-        <div className="flex-1 px-6 py-4 overflow-auto">
-          {selectedUsers.length > 0 && (
-            <div className="flex gap-2 flex-wrap mb-6">
-              {selectedUsers.map((user) => (
-                <div
-                  key={user}
-                  className="flex items-center gap-1 bg-primary/10 px-3 py-1.5 rounded-md text-sm"
-                >
-                  <span>{user}</span>
-                  <button
-                    onClick={() =>
-                      setSelectedUsers(selectedUsers.filter((u) => u !== user))
-                    }
-                    className="hover:bg-primary/20 rounded"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div className="max-w-2xl">
-            <div className="flex items-start gap-3 mb-6">
-              <div className="w-12 h-12 rounded bg-gradient-to-br from-yellow-400 to-yellow-600 flex items-center justify-center text-2xl">
-                💡
-              </div>
-              <div>
-                <h2 className="font-bold text-lg mb-2">Draft a message, without distractions</h2>
-                <p className="text-muted-foreground text-sm">
-                  From here, you can message any colleague or channel. Not seeing the right person in the list above?{' '}
-                  <button className="text-primary hover:underline">
-                    Add people to Slack
-                  </button>
-                </p>
+        <ScrollArea className="flex-1">
+          <div className="px-6 py-4">
+            <div className="max-w-2xl mx-auto">
+              <h2 className="text-sm font-semibold text-muted-foreground mb-3">People</h2>
+              <div className="space-y-1">
+                {filteredProfiles.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    {search ? 'No users found' : 'No other users yet'}
+                  </div>
+                ) : (
+                  filteredProfiles.map((profile) => (
+                    <button
+                      key={profile.id}
+                      onClick={() => handleCreateDM(profile.id, profile.display_name || profile.username)}
+                      className="w-full flex items-center gap-3 p-3 rounded hover:bg-muted transition-colors"
+                    >
+                      <div className="w-10 h-10 rounded bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center text-lg border border-primary/20 overflow-hidden">
+                        {profile.avatar_url ? (
+                          <img src={profile.avatar_url} alt={profile.username} className="w-full h-full object-cover" />
+                        ) : (
+                          '👤'
+                        )}
+                      </div>
+                      <div className="flex-1 text-left">
+                        <div className="font-semibold">{profile.display_name || profile.username}</div>
+                        {profile.display_name && (
+                          <div className="text-sm text-muted-foreground">@{profile.username}</div>
+                        )}
+                      </div>
+                    </button>
+                  ))
+                )}
               </div>
             </div>
-
-            {selectedUsers.length > 0 && (
-              <Button onClick={handleCreateChannel} className="w-full">
-                Start conversation
-              </Button>
-            )}
           </div>
-        </div>
+        </ScrollArea>
       </div>
+    </div>
   );
 }

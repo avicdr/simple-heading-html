@@ -112,8 +112,12 @@ const SortableChannelItem = ({
           {channel.type === 'channel' ? (
             <Hash className="h-[15px] w-[15px]" />
           ) : (
-            <div className="w-5 h-5 rounded bg-[hsl(var(--slack-purple-active))] flex items-center justify-center text-xs">
-              👤
+            <div className="w-5 h-5 rounded bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center text-xs border border-primary/20 overflow-hidden">
+              {channel.other_user?.avatar_url ? (
+                <img src={channel.other_user.avatar_url} alt={channel.other_user.username} className="w-full h-full object-cover" />
+              ) : (
+                '👤'
+              )}
             </div>
           )}
           <span className="flex-1 text-left truncate">{channel.name}</span>
