@@ -73,7 +73,9 @@ const SortableChannelItem = ({
     transition,
   };
 
-  const handleClick = () => {
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     onClick();
     navigate(`/c/${channel.id}`);
   };
@@ -85,12 +87,20 @@ const SortableChannelItem = ({
       onMoveToSection={(section) => onMoveToSection(channel.id, section)}
       onDelete={() => onDelete(channel.id, channel.name)}
     >
-      <button
+      <div
         ref={setNodeRef}
         style={style}
         {...attributes}
         {...listeners}
         onClick={handleClick}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            handleClick(e as any);
+          }
+        }}
         className={cn(
           'w-full flex items-center gap-2 px-3 py-1 rounded text-[15px] group transition-all cursor-pointer',
           isActive
@@ -106,7 +116,7 @@ const SortableChannelItem = ({
           </div>
         )}
         <span className="flex-1 text-left truncate">{channel.name}</span>
-      </button>
+      </div>
     </ChannelItemContextMenu>
   );
 };
