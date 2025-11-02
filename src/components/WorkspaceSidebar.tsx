@@ -62,7 +62,6 @@ const SortableChannelItem = ({
   const navigate = useNavigate();
   const {
     attributes,
-    listeners,
     setNodeRef,
     transform,
     transition,
@@ -81,43 +80,46 @@ const SortableChannelItem = ({
   };
 
   return (
-    <ChannelItemContextMenu
-      sections={sections}
-      currentSection={currentSection}
-      onMoveToSection={(section) => onMoveToSection(channel.id, section)}
-      onDelete={() => onDelete(channel.id, channel.name)}
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      className={cn(
+        'w-full flex items-center gap-2 px-3 py-1 rounded text-[15px] group transition-all',
+        isActive
+          ? 'bg-[hsl(var(--slack-cyan))] text-foreground font-bold'
+          : 'text-[hsl(var(--slack-text-secondary))] hover:bg-[hsl(var(--slack-purple-hover))]'
+      )}
     >
-      <div
-        ref={setNodeRef}
-        style={style}
-        {...attributes}
-        {...listeners}
-        onClick={handleClick}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            handleClick(e as any);
-          }
-        }}
-        className={cn(
-          'w-full flex items-center gap-2 px-3 py-1 rounded text-[15px] group transition-all cursor-pointer',
-          isActive
-            ? 'bg-[hsl(var(--slack-cyan))] text-foreground font-bold'
-            : 'text-[hsl(var(--slack-text-secondary))] hover:bg-[hsl(var(--slack-purple-hover))]'
-        )}
+      <ChannelItemContextMenu
+        sections={sections}
+        currentSection={currentSection}
+        onMoveToSection={(section) => onMoveToSection(channel.id, section)}
+        onDelete={() => onDelete(channel.id, channel.name)}
       >
-        {channel.type === 'channel' ? (
-          <Hash className="h-[15px] w-[15px]" />
-        ) : (
-          <div className="w-5 h-5 rounded bg-[hsl(var(--slack-purple-active))] flex items-center justify-center text-xs">
-            👤
-          </div>
-        )}
-        <span className="flex-1 text-left truncate">{channel.name}</span>
-      </div>
-    </ChannelItemContextMenu>
+        <div
+          onClick={handleClick}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              handleClick(e as any);
+            }
+          }}
+          className="flex items-center gap-2 flex-1 cursor-pointer"
+        >
+          {channel.type === 'channel' ? (
+            <Hash className="h-[15px] w-[15px]" />
+          ) : (
+            <div className="w-5 h-5 rounded bg-[hsl(var(--slack-purple-active))] flex items-center justify-center text-xs">
+              👤
+            </div>
+          )}
+          <span className="flex-1 text-left truncate">{channel.name}</span>
+        </div>
+      </ChannelItemContextMenu>
+    </div>
   );
 };
 
@@ -340,9 +342,9 @@ export const WorkspaceSidebar = () => {
           {Object.entries(channelsBySection).map(([section, sectionChannels]) => (
             <div key={section} className="mb-3">
               <ChannelContextMenu>
-                <button 
+                <div 
                   onClick={() => toggleSection(section)}
-                  className="w-full flex items-center justify-between px-3 py-1 text-[hsl(var(--slack-text-secondary))] hover:text-foreground text-xs font-bold group"
+                  className="w-full flex items-center justify-between px-3 py-1 text-[hsl(var(--slack-text-secondary))] hover:text-foreground text-xs font-bold group cursor-pointer"
                 >
                   <div className="flex items-center gap-1">
                     {collapsedSections[section] ? (
@@ -365,7 +367,7 @@ export const WorkspaceSidebar = () => {
                   >
                     <Plus className="h-3.5 w-3.5" />
                   </button>
-                </button>
+                </div>
               </ChannelContextMenu>
               {!collapsedSections[section] && (
                 <DndContext
